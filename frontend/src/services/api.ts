@@ -1,4 +1,4 @@
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 // ============ Types ============
 
@@ -41,6 +41,50 @@ export interface AuthResponse {
   access_token: string;
   token_type: string;
   expires_in: number;
+}
+
+// ============ Helpers ============
+
+// Backend uses snake_case, frontend uses camelCase
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mapCertificateFromApi(data: any): Certificate {
+  return {
+    id: data.id,
+    code: data.code,
+    recipientName: data.recipient_name,
+    email: data.email,
+    workshopName: data.workshop_name,
+    issueDate: data.issue_date,
+    skills: data.skills,
+    instructor: data.instructor,
+    isVerified: data.is_verified,
+    createdAt: data.created_at,
+  };
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mapCertificateVerifyFromApi(data: any): CertificateVerifyResponse {
+  return {
+    id: data.id,
+    code: data.code,
+    recipientName: data.recipient_name,
+    workshopName: data.workshop_name,
+    issueDate: data.issue_date,
+    skills: data.skills,
+    instructor: data.instructor,
+    isVerified: data.is_verified,
+  };
+}
+
+function mapCertificateToApi(cert: Omit<Certificate, 'id' | 'code' | 'isVerified' | 'createdAt'>) {
+  return {
+    recipient_name: cert.recipientName,
+    email: cert.email,
+    workshop_name: cert.workshopName,
+    issue_date: cert.issueDate,
+    skills: cert.skills,
+    instructor: cert.instructor,
+  };
 }
 
 // ============ Auth ============
@@ -89,7 +133,8 @@ export async function verifyCertificate(code: string): Promise<CertificateVerify
     throw new Error('Verification failed');
   }
 
-  return response.json();
+  const data = await response.json();
+  return mapCertificateVerifyFromApi(data);
 }
 
 export async function searchCertificates(email: string): Promise<CertificateVerifyResponse[]> {
@@ -99,7 +144,8 @@ export async function searchCertificates(email: string): Promise<CertificateVeri
     throw new Error('Search failed');
   }
 
-  return response.json();
+  const data = await response.json();
+  return data.map(mapCertificateVerifyFromApi);
 }
 
 // ============ Certificates (Admin) ============
@@ -114,14 +160,15 @@ export async function createCertificate(
       'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify(certificate),
+    body: JSON.stringify(mapCertificateToApi(certificate)),
   });
 
   if (!response.ok) {
     throw new Error('Failed to create certificate');
   }
 
-  return response.json();
+  const data = await response.json();
+  return mapCertificateFromApi(data);
 }
 
 export async function getAllCertificates(token: string, skip: number = 0, limit: number = 100): Promise<Certificate[]> {
@@ -138,7 +185,8 @@ export async function getAllCertificates(token: string, skip: number = 0, limit:
     throw new Error('Failed to fetch certificates');
   }
 
-  return response.json();
+  const data = await response.json();
+  return data.map(mapCertificateFromApi);
 }
 
 export async function getCertificateDetail(token: string, certificateId: string): Promise<Certificate> {
@@ -152,7 +200,8 @@ export async function getCertificateDetail(token: string, certificateId: string)
     throw new Error('Failed to fetch certificate');
   }
 
-  return response.json();
+  const data = await response.json();
+  return mapCertificateFromApi(data);
 }
 
 export async function updateCertificate(
@@ -173,7 +222,8 @@ export async function updateCertificate(
     throw new Error('Failed to update certificate');
   }
 
-  return response.json();
+  const data = await response.json();
+  return mapCertificateFromApi(data);
 }
 
 export async function deleteCertificate(token: string, certificateId: string): Promise<{ success: true; message: string }> {
@@ -201,14 +251,18 @@ export async function bulkCreateCertificates(
       'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify(certificates),
+    body: JSON.stringify(certificates.map(mapCertificateToApi)),
   });
 
   if (!response.ok) {
     throw new Error('Failed to create certificates');
   }
 
-  return response.json();
+  const data = await response.json();
+  return {
+    ...data,
+    certificates: data.certificates.map(mapCertificateFromApi),
+  };
 }
 
 export async function getCertificateStats(token: string): Promise<{ total_certificates: number }> {

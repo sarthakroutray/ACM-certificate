@@ -4,13 +4,14 @@ import { useAuth } from '../../context/AuthContext';
 import Button from '../../components/ui/Button';
 import Card from '../../components/ui/Card';
 import AnimatedSection from '../../components/ui/AnimatedSection';
-import { Lock, User, AlertCircle } from 'lucide-react';
+import { Lock, Mail, AlertCircle } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 const Login: React.FC = () => {
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
   const { login, isAuthenticated } = useAuth();
   const navigate = useNavigate();
 
@@ -19,20 +20,23 @@ const Login: React.FC = () => {
     return <Navigate to="/admin" replace />;
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
-    if (!username || !password) {
-      setError('Please enter both username and password');
+    if (!email || !password) {
+      setError('Please enter both email and password');
       return;
     }
 
-    const success = login(username, password);
+    setIsLoading(true);
+    const success = await login(email, password);
+    setIsLoading(false);
+
     if (success) {
       navigate('/admin');
     } else {
-      setError('Invalid credentials. Try admin/admin123');
+      setError('Invalid credentials. Make sure the backend is running and admin is initialized.');
     }
   };
 
@@ -66,20 +70,20 @@ const Login: React.FC = () => {
               )}
 
               <div className="space-y-2">
-                <label htmlFor="username" className="text-sm font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wider">
-                  Username
+                <label htmlFor="email" className="text-sm font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wider">
+                  Email
                 </label>
                 <div className="relative group">
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <User className="h-5 w-5 text-slate-400 group-focus-within:text-primary transition-colors" />
+                    <Mail className="h-5 w-5 text-slate-400 group-focus-within:text-primary transition-colors" />
                   </div>
                   <input
-                    type="text"
-                    id="username"
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
+                    type="email"
+                    id="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
                     className="block w-full pl-10 pr-3 py-3 border-2 border-slate-200 dark:border-slate-700 rounded-lg font-mono focus:ring-4 focus:ring-primary/20 focus:border-primary transition-all outline-none bg-slate-50 dark:bg-slate-800 dark:text-white focus:bg-white dark:focus:bg-slate-900"
-                    placeholder="admin"
+                    placeholder="admin@example.com"
                   />
                 </div>
               </div>
@@ -103,14 +107,14 @@ const Login: React.FC = () => {
                 </div>
               </div>
 
-              <Button type="submit" className="w-full" size="lg">
-                Login
+              <Button type="submit" className="w-full" size="lg" isLoading={isLoading}>
+                {isLoading ? 'Logging in...' : 'Login'}
               </Button>
             </form>
 
             <div className="mt-6 p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-200 dark:border-slate-700">
               <p className="text-xs text-slate-500 dark:text-slate-400 font-mono text-center">
-                Demo credentials: <span className="font-bold text-slate-700 dark:text-slate-300">admin</span> / <span className="font-bold text-slate-700 dark:text-slate-300">admin123</span>
+                Use admin credentials from backend .env file
               </p>
             </div>
           </Card>

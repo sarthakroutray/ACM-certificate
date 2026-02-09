@@ -1,48 +1,72 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import Button from '../../components/ui/Button';
 import Card from '../../components/ui/Card';
-import AnimatedSection from '../../components/ui/AnimatedSection';
 import ImageUpload from '../../components/admin/ImageUpload';
-import { 
-  Upload, 
-  List, 
-  Plus, 
-  X, 
-  LogOut, 
+import {
+  Upload,
+  List,
+  Plus,
+  X,
+  LogOut,
   CheckCircle,
   Trash2,
   Calendar,
-  User as UserIcon
+  User as UserIcon,
+  AlertCircle,
+  Loader
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  saveCertificate, 
-  getUploadedCertificates, 
-  deleteCertificate,
-  generateCertificateId 
-} from '../../utils/certificateStorage';
-import { Certificate } from '../../../types';
+import {
+  createCertificate,
+  getAllCertificates,
+  deleteCertificate as deleteCertificateApi,
+  Certificate
+} from '../../services/api';
 
 type TabType = 'upload' | 'manage';
 
 const AdminDashboard: React.FC = () => {
-  const { logout, user } = useAuth();
+  const { logout, user, token } = useAuth();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<TabType>('upload');
   const [successMessage, setSuccessMessage] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingCerts, setIsLoadingCerts] = useState(true);
 
   // Form state
   const [formData, setFormData] = useState({
     workshopName: '',
     recipientName: '',
+    email: '',
     issueDate: '',
     instructor: '',
     templateImage: ''
   });
   const [skills, setSkills] = useState<string[]>(['']);
-  const [certificates, setCertificates] = useState<Certificate[]>(getUploadedCertificates());
+  const [certificates, setCertificates] = useState<Certificate[]>([]);
+
+  // Load certificates on mount
+  useEffect(() => {
+    const loadCertificates = async () => {
+      if (!token) return;
+
+      setIsLoadingCerts(true);
+      try {
+        const certs = await getAllCertificates(token);
+        setCertificates(certs);
+      } catch (error) {
+        console.error('Failed to load certificates:', error);
+        setErrorMessage('Failed to load certificates');
+      } finally {
+        setIsLoadingCerts(false);
+      }
+    };
+
+    loadCertificates();
+  }, [token]);
 
   const handleLogout = () => {
     logout();
@@ -72,57 +96,75 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+    setErrorMessage('');
+
     // Validate
-    if (!formData.workshopName || !formData.recipientName || !formData.issueDate || !formData.instructor) {
-      alert('Please fill in all required fields');
+    if (!formData.workshopName || !formData.recipientName || !formData.email || !formData.issueDate || !formData.instructor) {
+      setErrorMessage('Please fill in all required fields');
       return;
     }
 
     const filteredSkills = skills.filter(s => s.trim() !== '');
     if (filteredSkills.length === 0) {
-      alert('Please add at least one skill');
+      setErrorMessage('Please add at least one skill');
       return;
     }
 
-    // Create certificate
-    const certificate: Certificate = {
-      id: generateCertificateId(),
-      workshopName: formData.workshopName,
-      recipientName: formData.recipientName,
-      issueDate: formData.issueDate,
-      instructor: formData.instructor,
-      skills: filteredSkills,
-      templateImage: formData.templateImage || undefined
-    };
+    if (!token) {
+      setErrorMessage('Not authenticated');
+      return;
+    }
 
-    // Save
-    saveCertificate(certificate);
-    
-    // Show success
-    setSuccessMessage(`Certificate ${certificate.id} created successfully!`);
-    setTimeout(() => setSuccessMessage(''), 5000);
+    setIsLoading(true);
+    try {
+      const newCertificate = await createCertificate(token, {
+        recipientName: formData.recipientName,
+        email: formData.email,
+        workshopName: formData.workshopName,
+        issueDate: formData.issueDate,
+        skills: filteredSkills,
+        instructor: formData.instructor
+      });
 
-    // Reset form
-    setFormData({
-      workshopName: '',
-      recipientName: '',
-      issueDate: '',
-      instructor: '',
-      templateImage: ''
-    });
-    setSkills(['']);
+      // Show success
+      setSuccessMessage(`Certificate ${newCertificate.code} created successfully!`);
+      setTimeout(() => setSuccessMessage(''), 5000);
 
-    // Refresh certificates list
-    setCertificates(getUploadedCertificates());
+      // Reset form
+      setFormData({
+        workshopName: '',
+        recipientName: '',
+        email: '',
+        issueDate: '',
+        instructor: '',
+        templateImage: ''
+      });
+      setSkills(['']);
+
+      // Add to list
+      setCertificates(prev => [newCertificate, ...prev]);
+    } catch (error) {
+      console.error('Failed to create certificate:', error);
+      setErrorMessage('Failed to create certificate. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleDelete = (id: string) => {
-    if (confirm(`Are you sure you want to delete certificate ${id}?`)) {
-      deleteCertificate(id);
-      setCertificates(getUploadedCertificates());
+  const handleDelete = async (id: string, code: string) => {
+    if (!confirm(`Are you sure you want to delete certificate ${code}?`)) return;
+    if (!token) return;
+
+    try {
+      await deleteCertificateApi(token, id);
+      setCertificates(prev => prev.filter(c => c.id !== id));
+      setSuccessMessage(`Certificate ${code} deleted successfully!`);
+      setTimeout(() => setSuccessMessage(''), 3000);
+    } catch (error) {
+      console.error('Failed to delete certificate:', error);
+      setErrorMessage('Failed to delete certificate');
     }
   };
 
@@ -134,7 +176,7 @@ const AdminDashboard: React.FC = () => {
           <div>
             <h1 className="text-4xl font-bold text-slate-900 dark:text-white mb-2">Admin Dashboard</h1>
             <p className="text-slate-600 dark:text-slate-300 font-mono">
-              Welcome back, <span className="font-bold text-primary">{user?.username}</span>
+              Welcome back, <span className="font-bold text-primary">{user?.email}</span>
             </p>
           </div>
           <Button onClick={handleLogout} variant="secondary" size="sm">
@@ -158,14 +200,29 @@ const AdminDashboard: React.FC = () => {
           )}
         </AnimatePresence>
 
+        {/* Error Message */}
+        <AnimatePresence>
+          {errorMessage && (
+            <motion.div
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="mb-6 bg-red-50 dark:bg-red-900/20 border-l-4 border-red-500 p-4 rounded-r-lg flex items-start"
+            >
+              <AlertCircle className="w-6 h-6 text-red-500 mr-3 flex-shrink-0 mt-0.5" />
+              <p className="text-red-800 dark:text-red-300 font-mono">{errorMessage}</p>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Tabs */}
         <div className="flex gap-4 mb-6 border-b border-slate-200 dark:border-slate-700">
           <button
             onClick={() => setActiveTab('upload')}
             className={`
               px-6 py-3 font-bold transition-all relative
-              ${activeTab === 'upload' 
-                ? 'text-primary' 
+              ${activeTab === 'upload'
+                ? 'text-primary'
                 : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
               }
             `}
@@ -183,8 +240,8 @@ const AdminDashboard: React.FC = () => {
             onClick={() => setActiveTab('manage')}
             className={`
               px-6 py-3 font-bold transition-all relative
-              ${activeTab === 'manage' 
-                ? 'text-primary' 
+              ${activeTab === 'manage'
+                ? 'text-primary'
                 : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
               }
             `}
@@ -240,6 +297,22 @@ const AdminDashboard: React.FC = () => {
                       onChange={handleInputChange}
                       className="block w-full px-4 py-3 border-2 border-slate-200 dark:border-slate-700 rounded-lg font-mono focus:ring-4 focus:ring-primary/20 focus:border-primary transition-all outline-none bg-slate-50 dark:bg-slate-800 dark:text-white"
                       placeholder="e.g. John Doe"
+                      required
+                    />
+                  </div>
+
+                  {/* Email */}
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wider">
+                      Recipient Email *
+                    </label>
+                    <input
+                      type="email"
+                      name="email"
+                      value={formData.email}
+                      onChange={handleInputChange}
+                      className="block w-full px-4 py-3 border-2 border-slate-200 dark:border-slate-700 rounded-lg font-mono focus:ring-4 focus:ring-primary/20 focus:border-primary transition-all outline-none bg-slate-50 dark:bg-slate-800 dark:text-white"
+                      placeholder="e.g. john@example.com"
                       required
                     />
                   </div>
@@ -319,9 +392,9 @@ const AdminDashboard: React.FC = () => {
                   />
 
                   {/* Submit */}
-                  <Button type="submit" size="lg" className="w-full">
+                  <Button type="submit" size="lg" className="w-full" isLoading={isLoading}>
                     <Upload className="w-5 h-5 mr-2" />
-                    Create Certificate
+                    {isLoading ? 'Creating...' : 'Create Certificate'}
                   </Button>
                 </form>
               </Card>
@@ -333,7 +406,14 @@ const AdminDashboard: React.FC = () => {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -20 }}
             >
-              {certificates.length === 0 ? (
+              {isLoadingCerts ? (
+                <Card>
+                  <div className="text-center py-12">
+                    <Loader className="w-8 h-8 text-primary animate-spin mx-auto mb-4" />
+                    <p className="text-slate-500 dark:text-slate-400 font-mono">Loading certificates...</p>
+                  </div>
+                </Card>
+              ) : certificates.length === 0 ? (
                 <Card>
                   <div className="text-center py-12">
                     <div className="w-16 h-16 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -349,17 +429,10 @@ const AdminDashboard: React.FC = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {certificates.map((cert) => (
                     <Card key={cert.id} className="relative">
-                      {cert.templateImage && (
-                        <img 
-                          src={cert.templateImage} 
-                          alt={cert.workshopName}
-                          className="w-full h-32 object-cover rounded-t-lg mb-4 -mt-6 -mx-6"
-                        />
-                      )}
                       <div className="space-y-3">
                         <div>
                           <h3 className="text-lg font-bold text-slate-900 dark:text-white">{cert.workshopName}</h3>
-                          <p className="text-xs font-mono text-slate-500 dark:text-slate-400">ID: {cert.id}</p>
+                          <p className="text-xs font-mono text-slate-500 dark:text-slate-400">Code: {cert.code}</p>
                         </div>
                         <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
                           <UserIcon size={14} />
@@ -371,7 +444,7 @@ const AdminDashboard: React.FC = () => {
                         </div>
                         <div className="flex flex-wrap gap-1">
                           {cert.skills.map((skill, idx) => (
-                            <span 
+                            <span
                               key={idx}
                               className="px-2 py-1 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-xs rounded font-mono"
                             >
@@ -380,7 +453,7 @@ const AdminDashboard: React.FC = () => {
                           ))}
                         </div>
                         <button
-                          onClick={() => handleDelete(cert.id)}
+                          onClick={() => handleDelete(cert.id, cert.code)}
                           className="w-full mt-4 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors flex items-center justify-center gap-2 font-bold"
                         >
                           <Trash2 size={16} />
