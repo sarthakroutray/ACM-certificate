@@ -4,27 +4,8 @@ import Card from '../components/ui/Card';
 import AnimatedSection from '../components/ui/AnimatedSection';
 import { Search, CheckCircle, XCircle, Loader, Shield, Calendar, User } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Certificate } from '../types';
-
-// Mock database
-const MOCK_DB: Record<string, Certificate> = {
-  'ACM-2023-REACT': {
-    id: 'ACM-2023-REACT',
-    recipientName: 'Alex Johnson',
-    workshopName: 'Advanced React Patterns',
-    issueDate: 'October 24, 2023',
-    skills: ['React Hooks', 'Context API', 'Performance Optimization'],
-    instructor: 'Dr. Emily Chen'
-  },
-  'ACM-2023-PYDS': {
-    id: 'ACM-2023-PYDS',
-    recipientName: 'Sarah Smith',
-    workshopName: 'Python for Data Science',
-    issueDate: 'November 10, 2023',
-    skills: ['Pandas', 'NumPy', 'Matplotlib'],
-    instructor: 'Prof. Michael Ross'
-  }
-};
+import { Certificate } from '../../types';
+import { getCertificateById } from '../utils/certificateStorage';
 
 const Verify: React.FC = () => {
   const [certId, setCertId] = useState('');
@@ -40,7 +21,7 @@ const Verify: React.FC = () => {
 
     // Simulate API call
     setTimeout(() => {
-      const found = MOCK_DB[certId.trim()];
+      const found = getCertificateById(certId.trim());
       if (found) {
         setResult(found);
         setStatus('success');

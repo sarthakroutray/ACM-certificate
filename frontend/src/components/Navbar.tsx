@@ -1,13 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useLocation } from 'react-router-dom';
-import { Menu, X, Award } from 'lucide-react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Menu, X, Award, LogOut, Shield } from 'lucide-react';
 import Button from './ui/Button';
-import logo from "../../public/assets/acm-logo.png"
+import { useAuth } from '../context/AuthContext';
+import acmLogo from '../../public/assets/acm-logo.png'
 
 const Navbar: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const location = useLocation();
+  const navigate = useNavigate();
+  const { isAuthenticated, logout } = useAuth();
 
   useEffect(() => {
     const handleScroll = () => {
@@ -21,6 +24,11 @@ const Navbar: React.FC = () => {
     setIsOpen(false);
   }, [location]);
 
+  const handleLogout = () => {
+    logout();
+    navigate('/');
+  };
+
   const navLinks = [
     { name: 'Home', path: '/' },
     { name: 'Verify Certificate', path: '/verify' },
@@ -31,17 +39,14 @@ const Navbar: React.FC = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center">
           <Link to="/" className="flex items-center space-x-2 group">
-            {/* <div className="w-10 h-10 bg-gradient-to-br from-primary to-purple-600 rounded-lg flex items-center justify-center text-white shadow-lg group-hover:shadow-primary/40 transition-shadow">
-              <Award className="w-6 h-6" />
-            </div> */}
             <img
-              src={logo}
+              src={acmLogo}
               alt="acm logo"
               className="w-10 h-10 object-contain"
             />
 
             <span className="font-sans font-bold text-xl tracking-tight text-text dark:text-white">
-              ACM<span className="text-primary"> Get My Certificate</span>
+              ACM<span className="text-primary">Get My Certificate</span>
             </span>
           </Link>
 
@@ -58,7 +63,25 @@ const Navbar: React.FC = () => {
               </Link>
             ))}
             
-
+            {isAuthenticated ? (
+              <>
+                <Link
+                  to="/admin"
+                  className={`text-sm font-medium transition-colors hover:text-primary relative group flex items-center gap-1 ${location.pathname === '/admin' ? 'text-primary' : 'text-slate-600 dark:text-slate-300 dark:hover:text-primary'}`}
+                >
+                  <Shield className="w-4 h-4" />
+                  Admin
+                  <span className={`absolute -bottom-1 left-0 w-full h-0.5 bg-primary transform origin-left transition-transform duration-300 ${location.pathname === '/admin' ? 'scale-x-100' : 'scale-x-0 group-hover:scale-x-100'}`}></span>
+                </Link>
+                <button
+                  onClick={handleLogout}
+                  className="text-sm font-medium text-slate-600 dark:text-slate-300 hover:text-red-500 dark:hover:text-red-400 transition-colors flex items-center gap-1"
+                >
+                  <LogOut className="w-4 h-4" />
+                  Logout
+                </button>
+              </>
+            ) : null}
           </div>
 
           {/* Mobile menu button */}
@@ -87,9 +110,25 @@ const Navbar: React.FC = () => {
               {link.name}
             </Link>
           ))}
-          <div className="pt-2">
-            <Button className="w-full justify-center" href="/workshops">Get Started</Button>
-          </div>
+          
+          {isAuthenticated && (
+            <>
+              <Link
+                to="/admin"
+                className={`block px-4 py-3 rounded-lg text-base font-medium transition-colors flex items-center gap-2 ${location.pathname === '/admin' ? 'bg-primary/10 text-primary' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
+              >
+                <Shield className="w-4 h-4" />
+                Admin Panel
+              </Link>
+              <button
+                onClick={handleLogout}
+                className="block px-4 py-3 rounded-lg text-base font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors flex items-center gap-2 text-left w-full"
+              >
+                <LogOut className="w-4 h-4" />
+                Logout
+              </button>
+            </>
+          )}
         </div>
       </div>
     </nav>

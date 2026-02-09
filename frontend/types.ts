@@ -5,6 +5,7 @@ export interface Certificate {
   issueDate: string;
   skills: string[];
   instructor: string;
+  templateImage?: string;
 }
 
 export interface Workshop {
