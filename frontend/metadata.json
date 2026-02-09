@@ -1,0 +1,5 @@
+{
+  "name": "ACM Certificates",
+  "description": "A verifiable certification platform for the ACM student chapter, featuring workshops, skill tracking, and instant certificate validation.",
+  "requestFramePermissions": []
+}
