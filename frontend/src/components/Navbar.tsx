@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Menu, X, Award, LogOut, Shield } from 'lucide-react';
 import Button from './ui/Button';
 import { useAuth } from '../context/AuthContext';
+import acmLogo from '../../public/assets/acm-logo.png'
 
 const Navbar: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -38,9 +39,12 @@ const Navbar: React.FC = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center">
           <Link to="/" className="flex items-center space-x-2 group">
-            <div className="w-10 h-10 bg-gradient-to-br from-primary to-purple-600 rounded-lg flex items-center justify-center text-white shadow-lg group-hover:shadow-primary/40 transition-shadow">
-              <Award className="w-6 h-6" />
-            </div>
+            <img
+              src={acmLogo}
+              alt="acm logo"
+              className="w-10 h-10 object-contain"
+            />
+
             <span className="font-sans font-bold text-xl tracking-tight text-text dark:text-white">
               ACM<span className="text-primary">Get My Certificate</span>
             </span>
