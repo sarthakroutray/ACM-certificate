@@ -56,6 +56,15 @@ class Certificate(Base):
     is_verified = Column(Boolean, default=True)
     verification_code = Column(String, unique=True, nullable=False, index=True)
     
+    # Generation status
+    status = Column(String, nullable=False, default="PENDING")  # PENDING | GENERATED
+    file_path = Column(String, nullable=True)  # relative path e.g. certificates/ACM-2024-ABCD.png
+    
+    # Email delivery tracking
+    email_status = Column(String, nullable=False, default="NOT_SENT", index=True)  # NOT_SENT | SENT | FAILED
+    email_sent_at = Column(DateTime, nullable=True)
+    email_error = Column(Text, nullable=True)
+    
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -96,11 +105,17 @@ class CertificateTemplate(Base):
     name_x = Column(Float, nullable=False, default=50)
     name_y = Column(Float, nullable=False, default=45)
     name_font_size = Column(Float, nullable=False, default=24)
+    name_font_family = Column(String, nullable=False, default="Arial")
+    name_alignment = Column(String, nullable=False, default="center")
+    name_color = Column(String, nullable=False, default="#1a1a2e")
 
     # Code placeholder position
     code_x = Column(Float, nullable=False, default=50)
     code_y = Column(Float, nullable=False, default=70)
     code_font_size = Column(Float, nullable=False, default=16)
+    code_font_family = Column(String, nullable=False, default="Courier New")
+    code_alignment = Column(String, nullable=False, default="center")
+    code_color = Column(String, nullable=False, default="#333333")
 
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

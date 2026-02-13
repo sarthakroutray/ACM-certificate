@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { Upload, X, Image as ImageIcon, RotateCcw, Move, Type, Plus, Loader, Check, Save } from 'lucide-react';
+import { Upload, X, Image as ImageIcon, RotateCcw, Move, Type, Plus, Loader, Check, Save, AlignLeft, AlignCenter, AlignRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getEventImages, uploadEventImage, getEventTemplates, saveEventTemplate, TemplateRecord } from '../../services/api';
 
@@ -7,6 +7,9 @@ interface PlaceholderPosition {
   x: number; // percentage 0-100
   y: number; // percentage 0-100
   fontSize: number; // px
+  fontFamily: string;
+  alignment: string;
+  color: string;
 }
 
 export interface TemplateData {
@@ -22,8 +25,8 @@ interface CertificateTemplateEditorProps {
   token?: string | null;
 }
 
-const DEFAULT_NAME_POS: PlaceholderPosition = { x: 50, y: 45, fontSize: 24 };
-const DEFAULT_CODE_POS: PlaceholderPosition = { x: 50, y: 70, fontSize: 16 };
+const DEFAULT_NAME_POS: PlaceholderPosition = { x: 50, y: 45, fontSize: 24, fontFamily: 'Arial', alignment: 'center', color: '#1a1a2e' };
+const DEFAULT_CODE_POS: PlaceholderPosition = { x: 50, y: 70, fontSize: 16, fontFamily: 'Courier New', alignment: 'center', color: '#333333' };
 
 const CertificateTemplateEditor: React.FC<CertificateTemplateEditorProps> = ({
   onTemplateChange,
@@ -98,7 +101,56 @@ const CertificateTemplateEditor: React.FC<CertificateTemplateEditorProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [preview, namePlaceholder, codePlaceholder]);
 
-  // Auto-save positions to DB (debounced 1.5s after last change)
+  // Handle global mouse move/up when dragging
+  useEffect(() => {
+    if (!activeDrag) return;
+
+    const handleWindowMove = (e: MouseEvent | TouchEvent) => {
+      if (!imageContainerRef.current) return;
+
+      const container = imageContainerRef.current.getBoundingClientRect();
+      const clientX = 'touches' in e ? e.touches[0].clientX : (e as MouseEvent).clientX;
+      const clientY = 'touches' in e ? e.touches[0].clientY : (e as MouseEvent).clientY;
+
+      // Calculate percentage position
+      let x = ((clientX - container.left) / container.width) * 100;
+      let y = ((clientY - container.top) / container.height) * 100;
+
+      // Clamp to 0-100
+      x = Math.max(0, Math.min(100, x));
+      y = Math.max(0, Math.min(100, y));
+
+      const updateFn = activeDrag === 'name' ? setNamePlaceholder : setCodePlaceholder;
+      updateFn((prev) => ({ ...prev, x, y }));
+    };
+
+    const handleWindowUp = () => {
+      setActiveDrag(null);
+    };
+
+    window.addEventListener('mousemove', handleWindowMove);
+    window.addEventListener('mouseup', handleWindowUp);
+    window.addEventListener('touchmove', handleWindowMove, { passive: false });
+    window.addEventListener('touchend', handleWindowUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handleWindowMove);
+      window.removeEventListener('mouseup', handleWindowUp);
+      window.removeEventListener('touchmove', handleWindowMove);
+      window.removeEventListener('touchend', handleWindowUp);
+    };
+  }, [activeDrag]);
+
+  const handleMouseDown = useCallback(
+    (type: 'name' | 'code') => (e: React.MouseEvent | React.TouchEvent) => {
+      e.preventDefault(); // Prevent scrolling on touch
+      e.stopPropagation();
+      setActiveDrag(type);
+    },
+    []
+  );
+
+  // Autosave when template changes
   useEffect(() => {
     if (!preview || !selectedImageUrl || !eventId || !token) return;
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
@@ -107,8 +159,14 @@ const CertificateTemplateEditor: React.FC<CertificateTemplateEditorProps> = ({
       try {
         const saved = await saveEventTemplate(token, eventId, {
           image_url: selectedImageUrl,
-          name_placeholder: namePlaceholder,
-          code_placeholder: codePlaceholder,
+          name_placeholder: {
+            x: namePlaceholder.x, y: namePlaceholder.y, fontSize: namePlaceholder.fontSize,
+            fontFamily: namePlaceholder.fontFamily, alignment: namePlaceholder.alignment, color: namePlaceholder.color,
+          },
+          code_placeholder: {
+            x: codePlaceholder.x, y: codePlaceholder.y, fontSize: codePlaceholder.fontSize,
+            fontFamily: codePlaceholder.fontFamily, alignment: codePlaceholder.alignment, color: codePlaceholder.color,
+          },
         });
         // Update local cache
         setTemplateRecords((prev) => {
@@ -121,7 +179,7 @@ const CertificateTemplateEditor: React.FC<CertificateTemplateEditorProps> = ({
       } finally {
         setIsSaving(false);
       }
-    }, 1500);
+    }, 500); // Reduced debounce to 500ms
     return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [namePlaceholder, codePlaceholder, selectedImageUrl, eventId, token]);
@@ -133,8 +191,18 @@ const CertificateTemplateEditor: React.FC<CertificateTemplateEditorProps> = ({
     // Restore saved positions if they exist for this image
     const saved = templateRecords.find((t) => t.image_url === url);
     if (saved) {
-      setNamePlaceholder({ x: saved.name_x, y: saved.name_y, fontSize: saved.name_font_size });
-      setCodePlaceholder({ x: saved.code_x, y: saved.code_y, fontSize: saved.code_font_size });
+      setNamePlaceholder({
+        x: saved.name_x, y: saved.name_y, fontSize: saved.name_font_size,
+        fontFamily: saved.name_font_family || 'Arial',
+        alignment: saved.name_alignment || 'center',
+        color: saved.name_color || '#1a1a2e',
+      });
+      setCodePlaceholder({
+        x: saved.code_x, y: saved.code_y, fontSize: saved.code_font_size,
+        fontFamily: saved.code_font_family || 'Courier New',
+        alignment: saved.code_alignment || 'center',
+        color: saved.code_color || '#333333',
+      });
     } else {
       setNamePlaceholder({ ...DEFAULT_NAME_POS });
       setCodePlaceholder({ ...DEFAULT_CODE_POS });
@@ -225,75 +293,6 @@ const CertificateTemplateEditor: React.FC<CertificateTemplateEditorProps> = ({
     setCodePlaceholder({ ...DEFAULT_CODE_POS });
   };
 
-  // ---- Drag logic (mouse) ----
-  const handleMouseDown = useCallback(
-    (type: 'name' | 'code') => (e: React.MouseEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      setActiveDrag(type);
-    },
-    []
-  );
-
-  const handleMouseMove = useCallback(
-    (e: React.MouseEvent) => {
-      if (!activeDrag || !imageContainerRef.current) return;
-      const rect = imageContainerRef.current.getBoundingClientRect();
-      const x = Math.min(Math.max(((e.clientX - rect.left) / rect.width) * 100, 2), 98);
-      const y = Math.min(Math.max(((e.clientY - rect.top) / rect.height) * 100, 2), 98);
-      if (activeDrag === 'name') {
-        setNamePlaceholder((prev) => ({ ...prev, x, y }));
-      } else {
-        setCodePlaceholder((prev) => ({ ...prev, x, y }));
-      }
-    },
-    [activeDrag]
-  );
-
-  const handleMouseUp = useCallback(() => {
-    setActiveDrag(null);
-  }, []);
-
-  // ---- Touch drag logic ----
-  const handleTouchStart = useCallback(
-    (type: 'name' | 'code') => (e: React.TouchEvent) => {
-      e.stopPropagation();
-      setActiveDrag(type);
-    },
-    []
-  );
-
-  const handleTouchMove = useCallback(
-    (e: React.TouchEvent) => {
-      if (!activeDrag || !imageContainerRef.current) return;
-      const touch = e.touches[0];
-      const rect = imageContainerRef.current.getBoundingClientRect();
-      const x = Math.min(Math.max(((touch.clientX - rect.left) / rect.width) * 100, 2), 98);
-      const y = Math.min(Math.max(((touch.clientY - rect.top) / rect.height) * 100, 2), 98);
-      if (activeDrag === 'name') {
-        setNamePlaceholder((prev) => ({ ...prev, x, y }));
-      } else {
-        setCodePlaceholder((prev) => ({ ...prev, x, y }));
-      }
-    },
-    [activeDrag]
-  );
-
-  const handleTouchEnd = useCallback(() => {
-    setActiveDrag(null);
-  }, []);
-
-  // Global mouseup listener
-  useEffect(() => {
-    const handler = () => setActiveDrag(null);
-    window.addEventListener('mouseup', handler);
-    window.addEventListener('touchend', handler);
-    return () => {
-      window.removeEventListener('mouseup', handler);
-      window.removeEventListener('touchend', handler);
-    };
-  }, []);
-
   // ---- Placeholder Pill component ----
   const PlaceholderPill: React.FC<{
     type: 'name' | 'code';
@@ -305,7 +304,7 @@ const CertificateTemplateEditor: React.FC<CertificateTemplateEditorProps> = ({
   }> = ({ type, position, color, borderColor, bgColor, label }) => (
     <div
       onMouseDown={handleMouseDown(type)}
-      onTouchStart={handleTouchStart(type)}
+      onTouchStart={handleMouseDown(type)} // Use same handler
       className="absolute select-none"
       style={{
         left: `${position.x}%`,
@@ -337,6 +336,94 @@ const CertificateTemplateEditor: React.FC<CertificateTemplateEditorProps> = ({
         style={{ backgroundColor: bgColor, color, opacity: 0.8, border: `1px solid ${borderColor}30` }}
       >
         {position.x.toFixed(0)}%, {position.y.toFixed(0)}%
+      </div>
+    </div>
+  );
+
+  // Helper to render controls for a placeholder
+  const renderControls = (
+    type: 'name' | 'code',
+    data: PlaceholderPosition,
+    setData: React.Dispatch<React.SetStateAction<PlaceholderPosition>>,
+    colorClass: string,
+    label: string
+  ) => (
+    <div className="space-y-3 pb-4 border-b border-slate-700/50 last:border-0">
+      <div className="flex items-center gap-2">
+        <div className={`w-3 h-3 rounded-full bg-${colorClass}-500`} />
+        <span className={`text-xs font-bold text-${colorClass}-300 uppercase tracking-wider`}>
+          {label} Placeholder
+        </span>
+        <span className="text-[10px] text-slate-500 font-mono ml-auto">
+          {data.x.toFixed(1)}%, {data.y.toFixed(1)}%
+        </span>
+      </div>
+
+      {/* Font Size */}
+      <div className="flex items-center gap-3">
+        <label className="text-xs text-slate-400 w-16 flex-shrink-0">Size</label>
+        <input
+          type="range"
+          min={type === 'name' ? 10 : 8}
+          max={type === 'name' ? 100 : 60}
+          value={data.fontSize}
+          onChange={(e) => setData((prev) => ({ ...prev, fontSize: parseInt(e.target.value) }))}
+          className={`flex-1 h-1.5 bg-slate-700 rounded-full appearance-none cursor-pointer accent-${colorClass}-500`}
+        />
+        <span className={`text-xs font-mono text-${colorClass}-300 w-8 text-right`}>
+          {data.fontSize}px
+        </span>
+      </div>
+
+      {/* Font Family & Color */}
+      <div className="flex gap-2">
+        <div className="flex-1">
+          <label className="block text-[10px] text-slate-400 mb-1">Font</label>
+          <select
+            value={data.fontFamily || 'Arial'}
+            onChange={(e) => setData((prev) => ({ ...prev, fontFamily: e.target.value }))}
+            className="w-full bg-slate-700 text-xs text-slate-200 rounded px-2 py-1.5 border border-slate-600 focus:border-emerald-500 outline-none"
+          >
+            {['Arial', 'Courier New', 'Times New Roman', 'Roboto', 'Inter'].map(f => (
+              <option key={f} value={f}>{f}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="block text-[10px] text-slate-400 mb-1">Color</label>
+          <div className="flex items-center gap-2 bg-slate-700 rounded px-2 py-1 border border-slate-600">
+            <input
+              type="color"
+              value={data.color || '#000000'}
+              onChange={(e) => setData((prev) => ({ ...prev, color: e.target.value }))}
+              className="w-6 h-6 bg-transparent border-0 p-0 cursor-pointer"
+            />
+            <span className="text-[10px] font-mono text-slate-300">{data.color}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Alignment */}
+      <div>
+        <label className="block text-[10px] text-slate-400 mb-1">Alignment</label>
+        <div className="flex bg-slate-700 rounded p-1 gap-1 w-fit">
+          {['left', 'center', 'right'].map((align) => (
+            <button
+              key={align}
+              type="button"
+              onClick={() => setData(prev => ({ ...prev, alignment: align }))}
+              className={`p-1.5 rounded ${(data.alignment || 'center') === align
+                  ? 'bg-slate-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200'
+                }`}
+              title={`Align ${align}`}
+            >
+              {align === 'left' && <AlignLeft size={14} />}
+              {align === 'center' && <AlignCenter size={14} />}
+              {align === 'right' && <AlignRight size={14} />}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -456,10 +543,6 @@ const CertificateTemplateEditor: React.FC<CertificateTemplateEditorProps> = ({
             <div
               ref={imageContainerRef}
               className="relative rounded-lg overflow-hidden border-2 border-slate-700 bg-slate-900 select-none"
-              onMouseMove={handleMouseMove}
-              onMouseUp={handleMouseUp}
-              onTouchMove={handleTouchMove}
-              onTouchEnd={handleTouchEnd}
               style={{ cursor: activeDrag ? 'grabbing' : 'default' }}
             >
               <img
@@ -501,10 +584,17 @@ const CertificateTemplateEditor: React.FC<CertificateTemplateEditorProps> = ({
                 type="button"
                 onClick={() => setShowControls(!showControls)}
                 className="w-full flex items-center justify-between px-4 py-2.5 text-sm font-bold text-slate-300 hover:text-white transition-colors"
+                title="Toggle Controls"
               >
                 <span className="flex items-center gap-2">
                   <Type size={14} />
                   Placeholder Settings
+                  {isSaving && (
+                    <span className="text-[10px] text-emerald-400 font-mono flex items-center gap-1">
+                      <Loader size={10} className="animate-spin" />
+                      Saving...
+                    </span>
+                  )}
                 </span>
                 <span className="text-xs text-slate-500">{showControls ? '▲ Hide' : '▼ Show'}</span>
               </button>
@@ -518,63 +608,9 @@ const CertificateTemplateEditor: React.FC<CertificateTemplateEditorProps> = ({
                     className="overflow-hidden"
                   >
                     <div className="px-4 pb-4 space-y-4 border-t border-slate-700 pt-3">
-                      {/* Name placeholder controls */}
-                      <div className="space-y-2">
-                        <div className="flex items-center gap-2">
-                          <div className="w-3 h-3 rounded-full bg-violet-500" />
-                          <span className="text-xs font-bold text-violet-300 uppercase tracking-wider">
-                            {'{{NAME}}'} Placeholder
-                          </span>
-                          <span className="text-[10px] text-slate-500 font-mono ml-auto">
-                            Position: {namePlaceholder.x.toFixed(1)}%, {namePlaceholder.y.toFixed(1)}%
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <label className="text-xs text-slate-400 w-16 flex-shrink-0">Font Size</label>
-                          <input
-                            type="range"
-                            min="10"
-                            max="60"
-                            value={namePlaceholder.fontSize}
-                            onChange={(e) =>
-                              setNamePlaceholder((prev) => ({ ...prev, fontSize: parseInt(e.target.value) }))
-                            }
-                            className="flex-1 h-1.5 bg-slate-700 rounded-full appearance-none cursor-pointer accent-violet-500"
-                          />
-                          <span className="text-xs font-mono text-violet-300 w-8 text-right">
-                            {namePlaceholder.fontSize}px
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Code placeholder controls */}
-                      <div className="space-y-2">
-                        <div className="flex items-center gap-2">
-                          <div className="w-3 h-3 rounded-full bg-amber-500" />
-                          <span className="text-xs font-bold text-amber-300 uppercase tracking-wider">
-                            {'{{CODE}}'} Placeholder
-                          </span>
-                          <span className="text-[10px] text-slate-500 font-mono ml-auto">
-                            Position: {codePlaceholder.x.toFixed(1)}%, {codePlaceholder.y.toFixed(1)}%
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <label className="text-xs text-slate-400 w-16 flex-shrink-0">Font Size</label>
-                          <input
-                            type="range"
-                            min="8"
-                            max="40"
-                            value={codePlaceholder.fontSize}
-                            onChange={(e) =>
-                              setCodePlaceholder((prev) => ({ ...prev, fontSize: parseInt(e.target.value) }))
-                            }
-                            className="flex-1 h-1.5 bg-slate-700 rounded-full appearance-none cursor-pointer accent-amber-500"
-                          />
-                          <span className="text-xs font-mono text-amber-300 w-8 text-right">
-                            {codePlaceholder.fontSize}px
-                          </span>
-                        </div>
-                      </div>
+                      {/* Using the new renderControls helper */}
+                      {renderControls('name', namePlaceholder, setNamePlaceholder, 'violet', '{{NAME}}')}
+                      {renderControls('code', codePlaceholder, setCodePlaceholder, 'amber', '{{CODE}}')}
 
                       {/* Reset button */}
                       <button
@@ -602,12 +638,12 @@ const CertificateTemplateEditor: React.FC<CertificateTemplateEditorProps> = ({
             onDragLeave={handleDragLeave}
             onClick={() => fileInputRef.current?.click()}
             className={`
-              border-2 border-dashed rounded-lg p-12 text-center cursor-pointer transition-all
-              ${isDragging
+                border-2 border-dashed rounded-lg p-12 text-center cursor-pointer transition-all
+                ${isDragging
                 ? 'border-primary bg-primary/5 scale-[1.02]'
                 : 'border-slate-600 hover:border-primary hover:bg-slate-800/50'
               }
-            `}
+              `}
           >
             <div className="flex flex-col items-center gap-3">
               <div className="w-16 h-16 rounded-full bg-slate-800 flex items-center justify-center">

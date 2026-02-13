@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import Button from '../components/ui/Button';
 import Card from '../components/ui/Card';
 import AnimatedSection from '../components/ui/AnimatedSection';
-import { Search, CheckCircle, XCircle, Calendar, User } from 'lucide-react';
+import { Search, CheckCircle, XCircle, Calendar, User, Download } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { verifyCertificate, CertificateVerifyResponse } from '../services/api';
 
@@ -115,6 +115,18 @@ const Verify: React.FC = () => {
                         ))}
                       </div>
                     </div>
+                    {result.certificateUrl && (
+                      <div className="col-span-2 mt-4 pt-4 border-t border-slate-100 dark:border-slate-700">
+                        <a
+                          href={result.certificateUrl}
+                          download={`certificate-${result.code}.png`}
+                          className="inline-flex items-center gap-2 px-4 py-2 bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 rounded-lg transition-colors text-sm font-bold"
+                        >
+                          <Download size={16} />
+                          Download Certificate
+                        </a>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

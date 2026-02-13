@@ -11,10 +11,17 @@ from datetime import datetime
 
 def create_certificate(db: Session, certificate_data: CertificateCreate) -> Certificate:
     """Create a new certificate"""
-    # Generate unique code: ACM-YYYY-RANDOM
-    current_year = datetime.now().year
-    random_code = str(uuid.uuid4())[:8].upper()
-    code = f"ACM-{current_year}-{random_code}"
+    # Generate unique code: ACM-YYYY-RANDOM if not provided
+    if certificate_data.code:
+        code = certificate_data.code
+        # Check for duplicate code
+        existing = db.query(Certificate).filter(Certificate.code == code).first()
+        if existing:
+            raise ValueError(f"Certificate code '{code}' already exists")
+    else:
+        current_year = datetime.now().year
+        random_code = str(uuid.uuid4())[:8].upper()
+        code = f"ACM-{current_year}-{random_code}"
     
     # Generate verification code
     verification_code = str(uuid.uuid4())

@@ -12,6 +12,9 @@ export interface Certificate {
   skills: string[];
   instructor: string;
   isVerified: boolean;
+  status: string;
+  filePath: string | null;
+  emailStatus: string;
   createdAt: string;
 }
 
@@ -24,6 +27,7 @@ export interface CertificateVerifyResponse {
   skills: string[];
   instructor: string;
   isVerified: boolean;
+  certificateUrl: string | null;
 }
 
 export interface Workshop {
@@ -58,6 +62,9 @@ function mapCertificateFromApi(data: any): Certificate {
     skills: data.skills,
     instructor: data.instructor,
     isVerified: data.is_verified,
+    status: data.status || 'PENDING',
+    filePath: data.file_path || null,
+    emailStatus: data.email_status || 'NOT_SENT',
     createdAt: data.created_at,
   };
 }
@@ -73,10 +80,21 @@ function mapCertificateVerifyFromApi(data: any): CertificateVerifyResponse {
     skills: data.skills,
     instructor: data.instructor,
     isVerified: data.is_verified,
+    certificateUrl: data.certificate_url || null,
   };
 }
 
-function mapCertificateToApi(cert: Omit<Certificate, 'id' | 'code' | 'isVerified' | 'createdAt'>) {
+export interface CertificateCreateData {
+  recipientName: string;
+  email: string;
+  workshopName: string;
+  issueDate: string;
+  skills: string[];
+  instructor: string;
+  code?: string;
+}
+
+function mapCertificateToApi(cert: CertificateCreateData) {
   return {
     recipient_name: cert.recipientName,
     email: cert.email,
@@ -84,6 +102,7 @@ function mapCertificateToApi(cert: Omit<Certificate, 'id' | 'code' | 'isVerified
     issue_date: cert.issueDate,
     skills: cert.skills,
     instructor: cert.instructor,
+    code: cert.code,
   };
 }
 
@@ -152,7 +171,7 @@ export async function searchCertificates(email: string): Promise<CertificateVeri
 
 export async function createCertificate(
   token: string,
-  certificate: Omit<Certificate, 'id' | 'code' | 'isVerified' | 'createdAt'>
+  certificate: CertificateCreateData
 ): Promise<Certificate> {
   const response = await fetch(`${API_BASE_URL}/api/certificates/`, {
     method: 'POST',
@@ -243,8 +262,8 @@ export async function deleteCertificate(token: string, certificateId: string): P
 
 export async function bulkCreateCertificates(
   token: string,
-  certificates: Array<Omit<Certificate, 'id' | 'code' | 'isVerified' | 'createdAt'>>
-): Promise<{ success: boolean; count: number; certificates: Certificate[] }> {
+  certificates: Array<CertificateCreateData>
+): Promise<{ success: boolean; count: number; certificates: Certificate[]; errors: Array<{ row: number; name: string; error: string }> }> {
   const response = await fetch(`${API_BASE_URL}/api/certificates/admin/bulk-create`, {
     method: 'POST',
     headers: {
@@ -255,13 +274,15 @@ export async function bulkCreateCertificates(
   });
 
   if (!response.ok) {
-    throw new Error('Failed to create certificates');
+    const errBody = await response.json().catch(() => null);
+    throw new Error(errBody?.detail || 'Failed to create certificates');
   }
 
   const data = await response.json();
   return {
     ...data,
     certificates: data.certificates.map(mapCertificateFromApi),
+    errors: data.errors || [],
   };
 }
 
@@ -282,7 +303,7 @@ export async function getCertificateStats(token: string): Promise<{ total_certif
 // ============ Workshops (Public) ============
 
 export async function getWorkshops(skip: number = 0, limit: number = 100): Promise<Workshop[]> {
-  const response = await fetch(`${API_BASE_URL}/api/workshops?skip=${skip}&limit=${limit}`);
+  const response = await fetch(`${API_BASE_URL}/api/workshops/?skip=${skip}&limit=${limit}`);
 
   if (!response.ok) {
     throw new Error('Failed to fetch workshops');
@@ -412,9 +433,15 @@ export interface TemplateRecord {
   name_x: number;
   name_y: number;
   name_font_size: number;
+  name_font_family: string;
+  name_alignment: string;
+  name_color: string;
   code_x: number;
   code_y: number;
   code_font_size: number;
+  code_font_family: string;
+  code_alignment: string;
+  code_color: string;
 }
 
 export async function getEventTemplates(eventId: string): Promise<TemplateRecord[]> {
@@ -430,8 +457,8 @@ export async function saveEventTemplate(
   eventId: string,
   data: {
     image_url: string;
-    name_placeholder: { x: number; y: number; fontSize: number };
-    code_placeholder: { x: number; y: number; fontSize: number };
+    name_placeholder: { x: number; y: number; fontSize: number; fontFamily?: string; alignment?: string; color?: string };
+    code_placeholder: { x: number; y: number; fontSize: number; fontFamily?: string; alignment?: string; color?: string };
   },
 ): Promise<TemplateRecord> {
   const response = await fetch(`${API_BASE_URL}/api/events/${eventId}/templates`, {
@@ -445,6 +472,153 @@ export async function saveEventTemplate(
 
   if (!response.ok) {
     throw new Error('Failed to save template');
+  }
+
+  return response.json();
+}
+
+// ============ Certificate Generation ============
+
+export interface BulkGenerateResponse {
+  total: number;
+  generated: number;
+  skipped: number;
+  failed: number;
+}
+
+export async function generateCertificate(
+  token: string,
+  certificateId: string,
+): Promise<{ success: boolean; file_path: string; download_url: string }> {
+  const response = await fetch(`${API_BASE_URL}/api/certificates/admin/generate/${certificateId}`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to generate certificate');
+  }
+
+  return response.json();
+}
+
+export async function generateWorkshopCertificates(
+  token: string,
+  workshopId: string,
+): Promise<BulkGenerateResponse> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/certificates/admin/generate-workshop/${workshopId}`,
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      },
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error('Failed to generate workshop certificates');
+  }
+
+  return response.json();
+}
+
+export async function downloadCertificateZip(
+  token: string,
+  workshopId: string,
+): Promise<Blob> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/certificates/admin/download-zip/${workshopId}`,
+    {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      },
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error('Failed to download certificate ZIP');
+  }
+
+  return response.blob();
+}
+
+export function getCertificateDownloadUrl(code: string): string {
+  return `${API_BASE_URL}/api/certificates/download/${code.toUpperCase()}`;
+}
+
+// ============ Email Delivery ============
+
+export interface EmailStatusResponse {
+  total: number;
+  sent: number;
+  failed: number;
+  pending: number;
+}
+
+export async function sendCertificateEmail(
+  token: string,
+  certificateId: string,
+  force: boolean = false,
+): Promise<{ success: boolean; message: string }> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/certificates/admin/send-email/${certificateId}?force=${force}`,
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      },
+    },
+  );
+
+  if (!response.ok) {
+    const errBody = await response.json().catch(() => null);
+    throw new Error(errBody?.detail || 'Failed to send email');
+  }
+
+  return response.json();
+}
+
+export async function sendWorkshopEmails(
+  token: string,
+  workshopId: string,
+  force: boolean = false,
+): Promise<{ message: string; total: number }> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/certificates/admin/send-workshop-emails/${workshopId}?force=${force}`,
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      },
+    },
+  );
+
+  if (!response.ok) {
+    const errBody = await response.json().catch(() => null);
+    throw new Error(errBody?.detail || 'Failed to send workshop emails');
+  }
+
+  return response.json();
+}
+
+export async function getEmailStatus(
+  token: string,
+  workshopId: string,
+): Promise<EmailStatusResponse> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/certificates/admin/email-status/${workshopId}`,
+    {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      },
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error('Failed to fetch email status');
   }
 
   return response.json();

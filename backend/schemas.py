@@ -46,7 +46,7 @@ class CertificateBase(BaseModel):
 
 
 class CertificateCreate(CertificateBase):
-    pass
+    code: Optional[str] = None
 
 
 class CertificateUpdate(BaseModel):
@@ -67,6 +67,11 @@ class CertificateResponse(BaseModel):
     skills: List[str]
     instructor: str
     is_verified: bool
+    status: str = "PENDING"
+    file_path: Optional[str] = None
+    email_status: str = "NOT_SENT"
+    email_sent_at: Optional[datetime] = None
+    email_error: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
@@ -84,9 +89,32 @@ class CertificateVerifyResponse(BaseModel):
     skills: List[str]
     instructor: str
     is_verified: bool
+    certificate_url: Optional[str] = None
 
     class Config:
         from_attributes = True
+
+
+class BulkGenerateResponse(BaseModel):
+    """Response for bulk certificate generation"""
+    total: int
+    generated: int
+    skipped: int
+    failed: int
+
+
+class EmailStatusResponse(BaseModel):
+    """Response for email status summary of a workshop"""
+    total: int
+    sent: int
+    failed: int
+    pending: int
+
+
+class BulkEmailResponse(BaseModel):
+    """Response for bulk email trigger"""
+    message: str
+    total: int
 
 
 # Auth Schemas
@@ -140,12 +168,15 @@ class PlaceholderPosition(BaseModel):
     x: float = 50
     y: float = 45
     fontSize: float = 24
+    fontFamily: str = "Arial"
+    alignment: str = "center"
+    color: str = "#000000"
 
 
 class TemplateCreate(BaseModel):
     image_url: str
     name_placeholder: PlaceholderPosition = PlaceholderPosition()
-    code_placeholder: PlaceholderPosition = PlaceholderPosition(x=50, y=70, fontSize=16)
+    code_placeholder: PlaceholderPosition = PlaceholderPosition(x=50, y=70, fontSize=16, fontFamily="Courier New", color="#333333")
 
 
 class TemplateUpdate(BaseModel):
@@ -160,9 +191,15 @@ class TemplateResponse(BaseModel):
     name_x: float
     name_y: float
     name_font_size: float
+    name_font_family: str = "Arial"
+    name_alignment: str = "center"
+    name_color: str = "#1a1a2e"
     code_x: float
     code_y: float
     code_font_size: float
+    code_font_family: str = "Courier New"
+    code_alignment: str = "center"
+    code_color: str = "#333333"
 
     class Config:
         from_attributes = True

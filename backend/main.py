@@ -1,5 +1,8 @@
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 
 from config import settings
@@ -12,6 +15,10 @@ async def lifespan(app: FastAPI):
     # Startup
     init_db()
     print("✓ Database initialized")
+    # Ensure media directories exist
+    media_dir = Path(__file__).parent / "media" / "certificates"
+    media_dir.mkdir(parents=True, exist_ok=True)
+    print("✓ Media directories ready")
     yield
     # Shutdown
     print("✓ Application shutdown")
@@ -40,6 +47,11 @@ app.include_router(certificates.router)
 app.include_router(workshops.router)
 app.include_router(images.router)
 app.include_router(templates.router)
+
+# Serve generated certificate images
+_media_dir = Path(__file__).parent / "media"
+_media_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/media", StaticFiles(directory=str(_media_dir)), name="media")
 
 
 # Health check endpoint

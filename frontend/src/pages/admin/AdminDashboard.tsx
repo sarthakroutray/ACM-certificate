@@ -23,7 +23,9 @@ import {
   ChevronDown,
   ChevronRight,
   Award,
-  Download
+  Download,
+  Mail,
+  Send
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -33,9 +35,16 @@ import {
   bulkCreateCertificates,
   getWorkshops,
   getEventTemplates,
+  generateCertificate as generateCertificateApi,
+  generateWorkshopCertificates,
+  downloadCertificateZip,
+  getCertificateDownloadUrl,
+  sendCertificateEmail,
+  sendWorkshopEmails,
   Certificate,
   Workshop,
-  TemplateRecord
+  TemplateRecord,
+  BulkGenerateResponse
 } from '../../services/api';
 
 type TabType = 'upload' | 'manage';
@@ -245,6 +254,7 @@ const AdminDashboard: React.FC = () => {
           issueDate: row.date || today,
           skills: row.skills ? row.skills.split(/[,;]/).map((s: string) => s.trim()).filter(Boolean) : [],
           instructor: row.instructor || 'ACM',
+          code: row.code || undefined,
         }));
 
       if (certificates.length === 0) {
@@ -257,6 +267,14 @@ const AdminDashboard: React.FC = () => {
       setBulkResult({ count: result.count });
       setCsvFile(null);
 
+      // Show per-row errors if any
+      if (result.errors && result.errors.length > 0) {
+        const errorSummary = result.errors
+          .map((e) => `Row ${e.row} (${e.name}): ${e.error}`)
+          .join('\n');
+        setErrorMessage(`${result.count} created, ${result.errors.length} failed:\n${errorSummary}`);
+      }
+
       // Refresh certificate list
       const allCerts = await getAllCertificates(token);
       setCertificates(allCerts);
@@ -268,73 +286,120 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
-  // ---- Download certificate image ----
+  // ---- Download certificate image (backend-generated) ----
   const handleDownloadCertificate = async (cert: Certificate) => {
+    if (!token) return;
     try {
-      // 1. Find event / workshop ID by matching workshopName
-      const workshops: Workshop[] = await getWorkshops();
-      const ws = workshops.find((w) => w.title === cert.workshopName);
-      if (!ws) {
-        alert('No event found for this certificate. Upload a template first.');
-        return;
+      // If not yet generated, trigger generation first
+      if (cert.status !== 'GENERATED') {
+        await generateCertificateApi(token, cert.id);
       }
-
-      // 2. Fetch saved templates for the event
-      const templates: TemplateRecord[] = await getEventTemplates(ws.id);
-      if (templates.length === 0) {
-        alert('No template saved for this event. Set up a template with placeholders first.');
-        return;
-      }
-
-      const tpl = templates[0]; // use the first (most recent) template
-
-      // 3. Load the template image onto a canvas
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
-      img.src = tpl.image_url;
-
-      await new Promise<void>((resolve, reject) => {
-        img.onload = () => resolve();
-        img.onerror = () => reject(new Error('Failed to load template image'));
-      });
-
-      const canvas = document.createElement('canvas');
-      canvas.width = img.naturalWidth;
-      canvas.height = img.naturalHeight;
-      const ctx = canvas.getContext('2d')!;
-      ctx.drawImage(img, 0, 0);
-
-      // 4. Draw name placeholder
-      const nameX = (tpl.name_x / 100) * canvas.width;
-      const nameY = (tpl.name_y / 100) * canvas.height;
-      // fontSize is stored as px for the ~500px-tall editor preview; scale to actual image
-      const scaleFactor = canvas.height / 500;
-      const nameFontSize = Math.round(tpl.name_font_size * scaleFactor);
-      ctx.font = `bold ${nameFontSize}px Arial, sans-serif`;
-      ctx.fillStyle = '#1a1a2e';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(cert.recipientName, nameX, nameY);
-
-      // 5. Draw code placeholder
-      const codeX = (tpl.code_x / 100) * canvas.width;
-      const codeY = (tpl.code_y / 100) * canvas.height;
-      const codeFontSize = Math.round(tpl.code_font_size * scaleFactor);
-      ctx.font = `${codeFontSize}px monospace`;
-      ctx.fillStyle = '#333';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(cert.code, codeX, codeY);
-
-      // 6. Download
-      const dataUrl = canvas.toDataURL('image/png');
+      // Download via the public endpoint
+      const url = getCertificateDownloadUrl(cert.code);
       const link = document.createElement('a');
+      link.href = url;
       link.download = `certificate-${cert.code}.png`;
-      link.href = dataUrl;
       link.click();
     } catch (err) {
-      console.error('Failed to generate certificate image:', err);
-      alert('Failed to generate certificate. Make sure a template with positions is saved for this event.');
+      console.error('Failed to download certificate:', err);
+      alert('Failed to download certificate. Make sure a template is saved for this event.');
+    }
+  };
+
+  // ---- Bulk generate + download ZIP ----
+  const [generateResult, setGenerateResult] = useState<BulkGenerateResponse | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [isDownloadingZip, setIsDownloadingZip] = useState(false);
+  const [isSendingEmails, setIsSendingEmails] = useState(false);
+  const [sendingEmailCertId, setSendingEmailCertId] = useState<string | null>(null);
+
+  const handleBulkGenerate = async (workshopName: string) => {
+    if (!token) return;
+    try {
+      const workshops: Workshop[] = await getWorkshops();
+      const ws = workshops.find((w) => w.title === workshopName);
+      if (!ws) { alert('Workshop not found'); return; }
+      setIsGenerating(true);
+      setGenerateResult(null);
+      const result = await generateWorkshopCertificates(token, ws.id);
+      setGenerateResult(result);
+      // Refresh certificate list to update statuses
+      const allCerts = await getAllCertificates(token);
+      setCertificates(allCerts);
+    } catch (err) {
+      console.error('Bulk generation failed:', err);
+      alert('Bulk generation failed. Ensure a template exists for this event.');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleDownloadZip = async (workshopName: string) => {
+    if (!token) return;
+    try {
+      const workshops: Workshop[] = await getWorkshops();
+      const ws = workshops.find((w) => w.title === workshopName);
+      if (!ws) { alert('Workshop not found'); return; }
+      setIsDownloadingZip(true);
+      const blob = await downloadCertificateZip(token, ws.id);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `certificates-${workshopName.replace(/\s+/g, '-')}.zip`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('ZIP download failed:', err);
+      alert('Failed to download ZIP. Generate certificates first.');
+    } finally {
+      setIsDownloadingZip(false);
+    }
+  };
+
+  const handleSendAllEmails = async (workshopName: string) => {
+    if (!token) return;
+    try {
+      const workshops: Workshop[] = await getWorkshops();
+      const ws = workshops.find((w) => w.title === workshopName);
+      if (!ws) { alert('Workshop not found'); return; }
+      setIsSendingEmails(true);
+      await sendWorkshopEmails(token, ws.id);
+      setSuccessMessage(`Email sending initiated for ${workshopName}. Status will update shortly.`);
+      setTimeout(() => setSuccessMessage(''), 5000);
+      // Refresh after a short delay to show updated statuses
+      setTimeout(async () => {
+        const allCerts = await getAllCertificates(token);
+        setCertificates(allCerts);
+      }, 3000);
+    } catch (err) {
+      console.error('Bulk email send failed:', err);
+      alert('Failed to send emails. Check SMTP configuration.');
+    } finally {
+      setIsSendingEmails(false);
+    }
+  };
+
+  const handleSendSingleEmail = async (cert: Certificate) => {
+    if (!token) return;
+    if (cert.status !== 'GENERATED') {
+      alert('Certificate must be generated before sending email.');
+      return;
+    }
+    try {
+      setSendingEmailCertId(cert.id);
+      await sendCertificateEmail(token, cert.id);
+      setSuccessMessage(`Email sending initiated for ${cert.recipientName}.`);
+      setTimeout(() => setSuccessMessage(''), 3000);
+      // Refresh after a short delay to show updated status
+      setTimeout(async () => {
+        const allCerts = await getAllCertificates(token);
+        setCertificates(allCerts);
+      }, 2000);
+    } catch (err) {
+      console.error('Email send failed:', err);
+      alert('Failed to send email. Check SMTP configuration.');
+    } finally {
+      setSendingEmailCertId(null);
     }
   };
 
@@ -670,6 +735,7 @@ const AdminDashboard: React.FC = () => {
                                   <tr className="border-b border-slate-700">
                                     <th className="text-left py-2 px-3 text-slate-300">name</th>
                                     <th className="text-left py-2 px-3 text-slate-300">email</th>
+                                    <th className="text-left py-2 px-3 text-slate-400">code <span className="text-slate-600">(optional)</span></th>
                                     <th className="text-left py-2 px-3 text-slate-400">skills <span className="text-slate-600">(optional)</span></th>
                                     <th className="text-left py-2 px-3 text-slate-400">instructor <span className="text-slate-600">(optional)</span></th>
                                   </tr>
@@ -678,6 +744,7 @@ const AdminDashboard: React.FC = () => {
                                   <tr className="text-slate-500">
                                     <td className="py-1.5 px-3">John Doe</td>
                                     <td className="py-1.5 px-3">john@example.com</td>
+                                    <td className="py-1.5 px-3">CODE123</td>
                                     <td className="py-1.5 px-3">React, Node</td>
                                     <td className="py-1.5 px-3">Prof. Smith</td>
                                   </tr>
@@ -873,6 +940,41 @@ const AdminDashboard: React.FC = () => {
                             </div>
                           </button>
 
+                          {/* Bulk actions bar */}
+                          {isExpanded && (
+                            <div className="mt-3 flex gap-2">
+                              <button
+                                onClick={() => handleBulkGenerate(eventName)}
+                                disabled={isGenerating}
+                                className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 rounded-lg transition-colors text-xs font-bold disabled:opacity-50"
+                              >
+                                {isGenerating ? <Loader size={12} className="animate-spin" /> : <Award size={12} />}
+                                {isGenerating ? 'Generating...' : 'Generate All'}
+                              </button>
+                              <button
+                                onClick={() => handleDownloadZip(eventName)}
+                                disabled={isDownloadingZip}
+                                className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 rounded-lg transition-colors text-xs font-bold disabled:opacity-50"
+                              >
+                                {isDownloadingZip ? <Loader size={12} className="animate-spin" /> : <Download size={12} />}
+                                {isDownloadingZip ? 'Zipping...' : 'Download ZIP'}
+                              </button>
+                              <button
+                                onClick={() => handleSendAllEmails(eventName)}
+                                disabled={isSendingEmails}
+                                className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/20 rounded-lg transition-colors text-xs font-bold disabled:opacity-50"
+                              >
+                                {isSendingEmails ? <Loader size={12} className="animate-spin" /> : <Mail size={12} />}
+                                {isSendingEmails ? 'Sending...' : 'Send All Emails'}
+                              </button>
+                              {generateResult && (
+                                <span className="text-[10px] text-emerald-400 font-mono self-center">
+                                  ✅ {generateResult.generated} generated, {generateResult.skipped} skipped, {generateResult.failed} failed
+                                </span>
+                              )}
+                            </div>
+                          )}
+
                           {/* Expanded certificate list */}
                           <AnimatePresence>
                             {isExpanded && (
@@ -897,9 +999,20 @@ const AdminDashboard: React.FC = () => {
                                         <Calendar size={12} />
                                         <span>{cert.issueDate}</span>
                                       </div>
-                                      <div className="flex items-center gap-2 text-xs text-slate-400">
-                                        <UserIcon size={12} />
-                                        <span>{cert.email}</span>
+                                      <div className="flex items-center justify-between text-xs text-slate-400">
+                                        <div className="flex items-center gap-2">
+                                          <UserIcon size={12} />
+                                          <span>{cert.email}</span>
+                                        </div>
+                                        {/* Email status badge */}
+                                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${cert.emailStatus === 'SENT'
+                                            ? 'bg-emerald-500/20 text-emerald-400'
+                                            : cert.emailStatus === 'FAILED'
+                                              ? 'bg-red-500/20 text-red-400'
+                                              : 'bg-yellow-500/20 text-yellow-400'
+                                          }`}>
+                                          {cert.emailStatus === 'SENT' ? '✉ Sent' : cert.emailStatus === 'FAILED' ? '✉ Failed' : '✉ Not Sent'}
+                                        </span>
                                       </div>
                                       <div className="flex flex-wrap gap-1">
                                         {cert.skills.map((skill, idx) => (
@@ -920,8 +1033,16 @@ const AdminDashboard: React.FC = () => {
                                           Download
                                         </button>
                                         <button
+                                          onClick={() => handleSendSingleEmail(cert)}
+                                          disabled={sendingEmailCertId === cert.id}
+                                          className="flex-1 px-3 py-1.5 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/20 rounded-lg transition-colors flex items-center justify-center gap-1.5 text-xs font-bold disabled:opacity-50"
+                                        >
+                                          {sendingEmailCertId === cert.id ? <Loader size={12} className="animate-spin" /> : <Send size={12} />}
+                                          {sendingEmailCertId === cert.id ? 'Sending...' : 'Send Email'}
+                                        </button>
+                                        <button
                                           onClick={() => handleDelete(cert.id, cert.code)}
-                                          className="flex-1 px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 rounded-lg transition-colors flex items-center justify-center gap-1.5 text-xs font-bold"
+                                          className="px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 rounded-lg transition-colors flex items-center justify-center gap-1.5 text-xs font-bold"
                                         >
                                           <Trash2 size={12} />
                                           Delete
@@ -943,7 +1064,7 @@ const AdminDashboard: React.FC = () => {
           )}
         </AnimatePresence>
       </div>
-    </div>
+    </div >
   );
 };
 

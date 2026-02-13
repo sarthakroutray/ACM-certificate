@@ -27,6 +27,17 @@ class Settings(BaseSettings):
     ENV: str = "development"
     APP_NAME: str = "ACM Certificate System"
     
+    # Email (SMTP)
+    EMAIL_HOST: str = ""
+    EMAIL_PORT: int = 587
+    EMAIL_USERNAME: str = ""
+    EMAIL_PASSWORD: str = ""
+    EMAIL_FROM: str = ""
+    EMAIL_USE_TLS: bool = True
+    
+    # Frontend URL for verification links in emails
+    FRONTEND_VERIFY_URL: str = "http://localhost:5173/verify"
+    
     class Config:
         env_file = ".env"
         case_sensitive = True
